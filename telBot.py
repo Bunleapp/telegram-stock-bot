@@ -1,284 +1,652 @@
-
-
 import logging
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+import os
 from datetime import datetime
 
-# Enable logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+import gspread
+from dotenv import load_dotenv
+from google.oauth2.service_account import Credentials
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
 )
+
+# =========================
+# LOAD ENV VARIABLES
+# =========================
+
+load_dotenv()
+
+TOKEN = os.getenv("BOT_TOKEN")
+SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
+ALLOWED_USERS = os.getenv("ALLOWED_USERS")
+
+if not TOKEN:
+    raise ValueError("BOT_TOKEN missing in .env")
+
+if not SPREADSHEET_URL:
+    raise ValueError("SPREADSHEET_URL missing in .env")
+
+if not ALLOWED_USERS:
+    raise ValueError("ALLOWED_USERS missing in .env")
+
+# Convert IDs into list
+ALLOWED_USERS = list(map(int, ALLOWED_USERS.split(",")))
+
+# =========================
+# SETTINGS
+# =========================
+
+LOW_STOCK_LIMIT = 5
+
+# =========================
+# LOGGING
+# =========================
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+
 logger = logging.getLogger(__name__)
 
-# Your bot token
-TOKEN = "YOUR_TELEGRAM_BOT_API_KEY"
+# =========================
+# GOOGLE SHEETS CONNECTION
+# =========================
 
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
-# Define the /start command handler
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Send a welcome message when the command /start is issued."""
-    await update.message.reply_text("Hello! I am here to assist with stock management.")
+credentials = Credentials.from_service_account_file(
+    "credentials/service_account.json",
+    scopes=SCOPES
+)
 
+client = gspread.authorize(credentials)
 
-# Define the /help command handler
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    help_message = (
-        "📋 *Available Commands:*\n\n"
-        "🛒 *Command to add stock:*\n"
-        "Format: `/addstock <item> <quantity> <price>`\n"
-        "Mfano: `/addstock maziwa 10 2000`\n\n"
-        "💸 *Command to add sales:*\n"
-        "Format: `/addsales <item> <quantity> <price>`\n"
-        "Mfano: `/addsales soda 10 3000`\n\n"
-        "📦 *Command to view stocks:*\n"
-        "Format: `/viewstock <review-date(Y:M:D)>`\n"
-        "Mfano: `/viewstock 2024-11-19`\n\n"
-        "📈 *Command to view sales:*\n"
-        "Format: `/viewsales <review-date(Y:M:D)>`\n"
-        "Mfano: `/viewsales 2024-11-23`\n"
+spreadsheet = client.open_by_url(SPREADSHEET_URL)
+
+# =========================
+# CREATE / LOAD WORKSHEETS
+# =========================
+
+try:
+    inventory_sheet = spreadsheet.worksheet("Inventory")
+except:
+    inventory_sheet = spreadsheet.add_worksheet(
+        title="Inventory",
+        rows=1000,
+        cols=10
     )
-    await update.message.reply_text(help_message, parse_mode="Markdown")
+
+try:
+    sales_sheet = spreadsheet.worksheet("Sales")
+except:
+    sales_sheet = spreadsheet.add_worksheet(
+        title="Sales",
+        rows=1000,
+        cols=10
+    )
+
+# =========================
+# CREATE HEADERS IF EMPTY
+# =========================
+
+if not inventory_sheet.get_all_values():
+
+    inventory_sheet.append_row([
+        "Product ID",
+        "Product Name",
+        "Quantity",
+        "Price",
+        "Last Updated"
+    ])
+
+if not sales_sheet.get_all_values():
+
+    sales_sheet.append_row([
+        "Product ID",
+        "Product Name",
+        "Quantity Sold",
+        "Price",
+        "Date"
+    ])
+
+# =========================
+# MENU KEYBOARD
+# =========================
+
+keyboard = [
+    ["📦 View Stock", "➕ Add Stock"],
+    ["💸 Sell Product", "📈 View Sales"],
+    ["🔍 Check Product", "⚠️ Low Stock"],
+    ["❓ Help"]
+]
+
+reply_markup = ReplyKeyboardMarkup(
+    keyboard,
+    resize_keyboard=True
+)
+
+# =========================
+# AUTHORIZATION
+# =========================
 
 
-#add stock
-async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        # Extract arguments from the command
-        args = context.args
-        if len(args) != 3:
-            await update.message.reply_text("Usage: /add <item> <quantity> <price>")
-            return
-        
-        item, quantity, price = args
-        
-         # Get the current timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Connect to Google Sheets
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 
-                  'https://www.googleapis.com/auth/drive']
-        credentials = Credentials.from_service_account_file(
-            'YOUR_JSON_FILE.json', scopes=SCOPES
-        )
-        client = gspread.authorize(credentials)
-        sheet = client.open("sheet_name").sheet1
-
-        # Add a row to the Google Sheet
-        sheet.append_row([item, quantity, price, timestamp, "Added via bot"])
-        await update.message.reply_text(f"Stock added: {item}, {quantity}, {price} , {timestamp}")
-
-    except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
-        
- 
- #add sales
-async def add_sales(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        # Extract arguments from the command
-        args = context.args
-        if len(args) != 3:
-            await update.message.reply_text("Usage: /add <item> <quantity> <price>")
-            return
-        
-        item, quantity, price = args
-        
-         # Get the current timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Connect to Google Sheets
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 
-                  'https://www.googleapis.com/auth/drive']
-        credentials = Credentials.from_service_account_file(
-            'YOUR_JSON_FILE.json', scopes=SCOPES
-        )
-        client = gspread.authorize(credentials)
-        sheet = client.open("sheet_name").get_worksheet(1)
-
-        # Add a row to the Google Sheet
-        sheet.append_row([item, quantity, price, timestamp, "Added via bot"])
-        await update.message.reply_text(f"Sales added: {item}, {quantity}, {price} , {timestamp}")
-
-    except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
-        
+def is_authorized(user_id):
+    return user_id in ALLOWED_USERS
 
 
-#view stock
-async def view_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        # Extract arguments
-        args = context.args
-        if len(args) != 1:
-            await update.message.reply_text("Usage: /viewstock <YYYY-MM-DD>")
-            return
+async def check_auth(update: Update):
 
-        filter_date = args[0]
-        try:
-            filter_date_obj = datetime.strptime(filter_date, "%Y-%m-%d")
-        except ValueError:
-            await update.message.reply_text("Invalid date format. Use YYYY-MM-DD.")
-            return
+    if not is_authorized(update.effective_user.id):
 
-        # Connect to Google Sheets
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 
-                  'https://www.googleapis.com/auth/drive']
-        credentials = Credentials.from_service_account_file(
-            'YOUR_JSON_FILE.json', scopes=SCOPES
-        )
-        client = gspread.authorize(credentials)
-        sheet = client.open("sheet_name").sheet1
-
-        # Get all records
-        records = sheet.get_all_records()
-        if not records:
-            await update.message.reply_text("No stock entries found.")
-            return
-
-        # Filter records by date
-        filtered_records = []
-        for record in records:
-            timestamp = record.get('Date', '')
-            if timestamp:
-                record_date = datetime.strptime(timestamp.split(' ')[0], "%Y-%m-%d")
-                if record_date == filter_date_obj:
-                    filtered_records.append(record)
-
-        if not filtered_records:
-            await update.message.reply_text(f"No stock entries found for {filter_date}.")
-            return
-
-        # Format and send the filtered records
-        response = f"📦 *Stock Entries for {filter_date}:*\n"
-        for record in filtered_records:
-            item = record.get('Item', 'N/A')
-            quantity = record.get('Quantity', 'N/A')
-            price = record.get('Price', 'N/A')
-            timestamp = record.get('Date', 'N/A')  # Ensure Timestamp is included
-            
-            response += f"- {item} | Quantity: {quantity} | Price: {price} | Added on: {timestamp}\n"
-
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
-
-
-#view sales
-async def view_sales(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    try:
-        # Extract arguments
-        args = context.args
-        if len(args) != 1:
-            await update.message.reply_text("Usage: /viewsales <YYYY-MM-DD>")
-            return
-
-        filter_date = args[0]
-        try:
-            filter_date_obj = datetime.strptime(filter_date, "%Y-%m-%d")
-        except ValueError:
-            await update.message.reply_text("Invalid date format. Use YYYY-MM-DD.")
-            return
-
-        # Connect to Google Sheets
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 
-                  'https://www.googleapis.com/auth/drive']
-        credentials = Credentials.from_service_account_file(
-            'YOUR_JSON_FILE.json', scopes=SCOPES
-        )
-        client = gspread.authorize(credentials)
-        sheet = client.open("sheet_name").get_worksheet(1)
-
-        # Get all records
-        records = sheet.get_all_records()
-        if not records:
-            await update.message.reply_text("No Sales entries found.")
-            return
-
-        # Filter records by date
-        filtered_records = []
-        for record in records:
-            timestamp = record.get('Date', '')
-            if timestamp:
-                record_date = datetime.strptime(timestamp.split(' ')[0], "%Y-%m-%d")
-                if record_date == filter_date_obj:
-                    filtered_records.append(record)
-
-        if not filtered_records:
-            await update.message.reply_text(f"No Sales entries found for {filter_date}.")
-            return
-
-        # Format and send the filtered records
-        response = f"📦 *Sales Entries for {filter_date}:*\n"
-        for record in filtered_records:
-            item = record.get('Item', 'N/A')
-            quantity = record.get('Quantity', 'N/A')
-            price = record.get('Price', 'N/A')
-            timestamp = record.get('Date', 'N/A')  # Ensure Timestamp is included
-            
-            response += f"- {item} | Quantity: {quantity} | Price: {price} | Added on: {timestamp}\n"
-
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
-
-
-# Define the text message handler
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle user text messages."""
-    user_message = update.message.text
-    # Example: Respond to specific input
-    if user_message.lower() == "hello":
-        await update.message.reply_text("Hi there! How can I assist you?")
-    elif user_message.lower() == "stock report":
-        await update.message.reply_text("Please provide the stock details.")
-    else:
         await update.message.reply_text(
-            f"You said: '{user_message}'. How can I help you with that?"
+            "❌ Unauthorized User"
         )
 
+        return False
 
-# Define an unknown command handler
-async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle unknown commands."""
-    await update.message.reply_text("Sorry, I didn't understand that command.")
+    return True
+
+# =========================
+# HELPER FUNCTION
+# =========================
+
+
+def find_product(product_name):
+
+    records = inventory_sheet.get_all_records()
+
+    for index, record in enumerate(records, start=2):
+
+        if record["Product Name"].lower() == product_name.lower():
+
+            return index, record
+
+    return None, None
+
+# =========================
+# START COMMAND
+# =========================
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    await update.message.reply_text(
+        "📦 Welcome to Stock Management Bot",
+        reply_markup=reply_markup
+    )
+
+# =========================
+# HELP COMMAND
+# =========================
+
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    help_text = """
+📋 AVAILABLE COMMANDS
+
+/addstock product_name quantity price
+Example:
+/addstock Mouse 10 15
+
+/sell product_name quantity
+Example:
+/sell Mouse 2
+
+/viewstock
+/viewsales
+/check product_name
+/lowstock
+"""
+
+    await update.message.reply_text(help_text)
+
+# =========================
+# ADD STOCK
+# =========================
+
+
+async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    try:
+
+        args = context.args
+
+        if len(args) < 3:
+
+            await update.message.reply_text(
+                "❌ Usage:\n/addstock product_name quantity price"
+            )
+
+            return
+
+        quantity = args[-2]
+        price = args[-1]
+        product_name = " ".join(args[:-2])
+
+        quantity = int(quantity)
+        price = float(price)
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        row_index, product = find_product(product_name)
+
+        # EXISTING PRODUCT
+        if product:
+
+            new_quantity = int(product["Quantity"]) + quantity
+
+            inventory_sheet.update_cell(row_index, 3, new_quantity)
+            inventory_sheet.update_cell(row_index, 4, price)
+            inventory_sheet.update_cell(row_index, 5, timestamp)
+
+            await update.message.reply_text(
+                f"✅ Stock Updated\n\n"
+                f"Product: {product_name}\n"
+                f"Added: {quantity}\n"
+                f"New Quantity: {new_quantity}"
+            )
+
+        # NEW PRODUCT
+        else:
+
+            product_id = f"P{len(inventory_sheet.get_all_records()) + 1}"
+
+            inventory_sheet.append_row([
+                product_id,
+                product_name,
+                quantity,
+                price,
+                timestamp
+            ])
+
+            await update.message.reply_text(
+                f"✅ New Product Added\n\n"
+                f"Product: {product_name}\n"
+                f"Quantity: {quantity}\n"
+                f"Price: ${price}"
+            )
+
+    except Exception as e:
+
+        logger.exception("Add stock error")
+
+        await update.message.reply_text(
+            f"❌ Error: {e}"
+        )
+
+# =========================
+# SELL PRODUCT
+# =========================
+
+
+async def sell_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    try:
+
+        args = context.args
+
+        if len(args) != 2:
+
+            await update.message.reply_text(
+                "❌ Usage:\n/sell product_name quantity"
+            )
+
+            return
+
+        product_name, quantity = args
+
+        quantity = int(quantity)
+
+        row_index, product = find_product(product_name)
+
+        if not product:
+
+            await update.message.reply_text(
+                "❌ Product not found."
+            )
+
+            return
+
+        current_stock = int(product["Quantity"])
+
+        if quantity > current_stock:
+
+            await update.message.reply_text(
+                f"❌ Insufficient stock.\nAvailable: {current_stock}"
+            )
+
+            return
+
+        new_stock = current_stock - quantity
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        inventory_sheet.update_cell(row_index, 3, new_stock)
+        inventory_sheet.update_cell(row_index, 5, timestamp)
+
+        sales_sheet.append_row([
+            product["Product ID"],
+            product_name,
+            quantity,
+            product["Price"],
+            timestamp
+        ])
+
+        message = (
+            f"✅ Product Sold\n\n"
+            f"Product: {product_name}\n"
+            f"Sold: {quantity}\n"
+            f"Remaining: {new_stock}"
+        )
+
+        if new_stock <= LOW_STOCK_LIMIT:
+
+            message += "\n\n⚠️ LOW STOCK ALERT"
+
+        await update.message.reply_text(message)
+
+    except Exception as e:
+
+        logger.exception("Sell product error")
+
+        await update.message.reply_text(
+            f"❌ Error: {e}"
+        )
+
+# =========================
+# VIEW STOCK
+# =========================
+
+
+async def view_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    try:
+
+        records = inventory_sheet.get_all_records()
+
+        if not records:
+
+            await update.message.reply_text(
+                "📦 No inventory found."
+            )
+
+            return
+
+        response = "📦 CURRENT INVENTORY\n\n"
+
+        for record in records:
+
+            response += (
+                f"ID: {record['Product ID']}\n"
+                f"Product: {record['Product Name']}\n"
+                f"Quantity: {record['Quantity']}\n"
+                f"Price: ${record['Price']}\n"
+                f"-------------------\n"
+            )
+
+        await update.message.reply_text(response)
+
+    except Exception as e:
+
+        logger.exception("View stock error")
+
+        await update.message.reply_text(
+            f"❌ Error: {e}"
+        )
+
+# =========================
+# VIEW SALES
+# =========================
+
+
+async def view_sales(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    try:
+
+        records = sales_sheet.get_all_records()
+
+        if not records:
+
+            await update.message.reply_text(
+                "📈 No sales found."
+            )
+
+            return
+
+        response = "📈 SALES HISTORY\n\n"
+
+        for record in records[-10:]:
+
+            response += (
+                f"Product: {record['Product Name']}\n"
+                f"Sold: {record['Quantity Sold']}\n"
+                f"Price: ${record['Price']}\n"
+                f"Date: {record['Date']}\n"
+                f"-------------------\n"
+            )
+
+        await update.message.reply_text(response)
+
+    except Exception as e:
+
+        logger.exception("View sales error")
+
+        await update.message.reply_text(
+            f"❌ Error: {e}"
+        )
+
+# =========================
+# CHECK PRODUCT
+# =========================
+
+
+async def check_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    try:
+
+        args = context.args
+
+        if len(args) != 1:
+
+            await update.message.reply_text(
+                "❌ Usage:\n/check product_name"
+            )
+
+            return
+
+        product_name = args[0]
+
+        row_index, product = find_product(product_name)
+
+        if not product:
+
+            await update.message.reply_text(
+                "❌ Product not found."
+            )
+
+            return
+
+        await update.message.reply_text(
+            f"🔍 PRODUCT DETAILS\n\n"
+            f"ID: {product['Product ID']}\n"
+            f"Product: {product['Product Name']}\n"
+            f"Quantity: {product['Quantity']}\n"
+            f"Price: ${product['Price']}"
+        )
+
+    except Exception as e:
+
+        logger.exception("Check product error")
+
+        await update.message.reply_text(
+            f"❌ Error: {e}"
+        )
+
+# =========================
+# LOW STOCK
+# =========================
+
+
+async def low_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not await check_auth(update):
+        return
+
+    try:
+
+        records = inventory_sheet.get_all_records()
+
+        low_stock_items = []
+
+        for record in records:
+
+            if int(record["Quantity"]) <= LOW_STOCK_LIMIT:
+
+                low_stock_items.append(record)
+
+        if not low_stock_items:
+
+            await update.message.reply_text(
+                "✅ No low stock products."
+            )
+
+            return
+
+        response = "⚠️ LOW STOCK PRODUCTS\n\n"
+
+        for item in low_stock_items:
+
+            response += (
+                f"{item['Product Name']} "
+                f"({item['Quantity']} left)\n"
+            )
+
+        await update.message.reply_text(response)
+
+    except Exception as e:
+
+        logger.exception("Low stock error")
+
+        await update.message.reply_text(
+            f"❌ Error: {e}"
+        )
+
+# =========================
+# BUTTON HANDLER
+# =========================
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    text = update.message.text
+
+    if text == "📦 View Stock":
+        await view_stock(update, context)
+
+    elif text == "➕ Add Stock":
+        await update.message.reply_text(
+            "Use:\n/addstock product_name quantity price"
+        )
+
+    elif text == "💸 Sell Product":
+        await update.message.reply_text(
+            "Use:\n/sell product_name quantity"
+        )
+
+    elif text == "📈 View Sales":
+        await view_sales(update, context)
+
+    elif text == "🔍 Check Product":
+        await update.message.reply_text(
+            "Use:\n/check product_name"
+        )
+
+    elif text == "⚠️ Low Stock":
+        await low_stock(update, context)
+
+    elif text == "❓ Help":
+        await help_command(update, context)
+
+# =========================
+# UNKNOWN COMMAND
+# =========================
+
+
+async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text(
+        "❌ Unknown command.\nUse /help"
+    )
+
+# =========================
+# MAIN FUNCTION
+# =========================
 
 
 def main():
-    """Run the bot."""
-    # Create the Application
-    application = Application.builder().token(TOKEN).build()
 
-    # Add command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("addstock", add_stock))
-    application.add_handler(CommandHandler("addsales", add_sales))
-    application.add_handler(CommandHandler("viewstock", view_stock))
-    application.add_handler(CommandHandler("viewsales", view_sales))
+    app = Application.builder().token(TOKEN).build()
 
+    # COMMANDS
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("addstock", add_stock))
+    app.add_handler(CommandHandler("sell", sell_product))
+    app.add_handler(CommandHandler("viewstock", view_stock))
+    app.add_handler(CommandHandler("viewsales", view_sales))
+    app.add_handler(CommandHandler("check", check_product))
+    app.add_handler(CommandHandler("lowstock", low_stock))
 
-    # Add a text message handler
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # BUTTON HANDLER
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            handle_text
+        )
+    )
 
-    # Add a handler for unknown commands
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))
+    # UNKNOWN COMMAND
+    app.add_handler(
+        MessageHandler(filters.COMMAND, unknown)
+    )
 
-    # Start the bot
-    application.run_polling()
+    print("✅ Bot is running...")
+
+    app.run_polling()
+
+# =========================
+# START BOT
+# =========================
 
 
 if __name__ == "__main__":
