@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime
-
+import json
 import gspread
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
@@ -80,15 +80,26 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-credentials = Credentials.from_service_account_file(
-    "credentials/service_account.json",
-    scopes=SCOPES
-)
+# Load the JSON string from the environment variable
+creds_json = os.environ.get('GOOGLE_CREDS_JSON')
+
+if creds_json:
+    # Running on Render: Parse the JSON string into a dictionary
+    creds_dict = json.loads(creds_json)
+    credentials = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=SCOPES
+    )
+else:
+    # Running locally: load from the file
+    credentials = Credentials.from_service_account_file(
+        "credentials/service_account.json",
+        scopes=SCOPES
+    )
 
 client = gspread.authorize(credentials)
 
 spreadsheet = client.open_by_url(SPREADSHEET_URL)
-
 # =========================
 # CREATE / LOAD WORKSHEETS
 # =========================
