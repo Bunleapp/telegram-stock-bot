@@ -14,9 +14,18 @@ from telegram.ext import (
     filters,
 )
 
-from google.oauth2.service_account import Credentials
 
-# Load the JSON string from the environment variable
+# =========================
+# 1. DEFINE SCOPES FIRST
+# =========================
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
+# =========================
+# 2. THEN SET UP CREDENTIALS
+# =========================
 creds_json = os.environ.get('GOOGLE_CREDS_JSON')
 
 if creds_json:
