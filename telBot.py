@@ -14,6 +14,24 @@ from telegram.ext import (
     filters,
 )
 
+from google.oauth2.service_account import Credentials
+
+# Load the JSON string from the environment variable
+creds_json = os.environ.get('GOOGLE_CREDS_JSON')
+
+if creds_json:
+    # Running on Render: Parse the JSON string into a dictionary
+    creds_dict = json.loads(creds_json)
+    credentials = Credentials.from_service_account_info(
+        creds_dict,
+        scopes=SCOPES
+    )
+else:
+    # Running locally: load from the file
+    credentials = Credentials.from_service_account_file(
+        "credentials/service_account.json",
+        scopes=SCOPES
+    )
 # =========================
 # LOAD ENV VARIABLES
 # =========================
