@@ -14,33 +14,6 @@ from telegram.ext import (
     filters,
 )
 
-
-# =========================
-# 1. DEFINE SCOPES FIRST
-# =========================
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
-
-# =========================
-# 2. THEN SET UP CREDENTIALS
-# =========================
-creds_json = os.environ.get('GOOGLE_CREDS_JSON')
-
-if creds_json:
-    # Running on Render: Parse the JSON string into a dictionary
-    creds_dict = json.loads(creds_json)
-    credentials = Credentials.from_service_account_info(
-        creds_dict,
-        scopes=SCOPES
-    )
-else:
-    # Running locally: load from the file
-    credentials = Credentials.from_service_account_file(
-        "credentials/service_account.json",
-        scopes=SCOPES
-    )
 # =========================
 # LOAD ENV VARIABLES
 # =========================
@@ -52,13 +25,13 @@ SPREADSHEET_URL = os.getenv("SPREADSHEET_URL")
 ALLOWED_USERS = os.getenv("ALLOWED_USERS")
 
 if not TOKEN:
-    raise ValueError("BOT_TOKEN missing in .env")
+    raise ValueError("BOT_TOKEN missing")
 
 if not SPREADSHEET_URL:
-    raise ValueError("SPREADSHEET_URL missing in .env")
+    raise ValueError("SPREADSHEET_URL missing")
 
 if not ALLOWED_USERS:
-    raise ValueError("ALLOWED_USERS missing in .env")
+    raise ValueError("ALLOWED_USERS missing")
 
 # Convert IDs into list
 ALLOWED_USERS = list(map(int, ALLOWED_USERS.split(",")))
@@ -89,18 +62,19 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Load the JSON string from the environment variable
-creds_json = os.environ.get('GOOGLE_CREDS_JSON')
+creds_json = os.environ.get("GOOGLE_CREDS_JSON")
 
 if creds_json:
-    # Running on Render: Parse the JSON string into a dictionary
+    # Render deployment
     creds_dict = json.loads(creds_json)
+
     credentials = Credentials.from_service_account_info(
         creds_dict,
         scopes=SCOPES
     )
+
 else:
-    # Running locally: load from the file
+    # Local development
     credentials = Credentials.from_service_account_file(
         "credentials/service_account.json",
         scopes=SCOPES
@@ -109,12 +83,14 @@ else:
 client = gspread.authorize(credentials)
 
 spreadsheet = client.open_by_url(SPREADSHEET_URL)
+
 # =========================
 # CREATE / LOAD WORKSHEETS
 # =========================
 
 try:
     inventory_sheet = spreadsheet.worksheet("Inventory")
+
 except:
     inventory_sheet = spreadsheet.add_worksheet(
         title="Inventory",
@@ -124,6 +100,7 @@ except:
 
 try:
     sales_sheet = spreadsheet.worksheet("Sales")
+
 except:
     sales_sheet = spreadsheet.add_worksheet(
         title="Sales",
@@ -239,11 +216,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 /addstock product_name quantity price
 Example:
-/addstock Mouse 10 15
+/addstock Gaming Mouse 10 15
 
 /sell product_name quantity
 Example:
-/sell Mouse 2
+/sell Gaming Mouse 2
 
 /viewstock
 /viewsales
@@ -275,12 +252,10 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return
 
-        quantity = args[-2]
-        price = args[-1]
-        product_name = " ".join(args[:-2])
+        quantity = int(args[-2])
+        price = float(args[-1])
 
-        quantity = int(quantity)
-        price = float(price)
+        product_name = " ".join(args[:-2])
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -344,7 +319,7 @@ async def sell_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         args = context.args
 
-        if len(args) != 2:
+        if len(args) < 2:
 
             await update.message.reply_text(
                 "❌ Usage:\n/sell product_name quantity"
@@ -352,9 +327,9 @@ async def sell_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return
 
-        product_name, quantity = args
+        quantity = int(args[-1])
 
-        quantity = int(quantity)
+        product_name = " ".join(args[:-1])
 
         row_index, product = find_product(product_name)
 
@@ -514,7 +489,7 @@ async def check_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         args = context.args
 
-        if len(args) != 1:
+        if len(args) < 1:
 
             await update.message.reply_text(
                 "❌ Usage:\n/check product_name"
@@ -522,7 +497,7 @@ async def check_product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             return
 
-        product_name = args[0]
+        product_name = " ".join(args)
 
         row_index, product = find_product(product_name)
 
@@ -678,7 +653,7 @@ def main():
         MessageHandler(filters.COMMAND, unknown)
     )
 
-    print("✅ Bot is running...")
+    logger.info("✅ Bot is running...")
 
     app.run_polling()
 

@@ -1,6 +1,7 @@
 services:
   - type: worker
-    name: telegram-stock-bot
-    env: python
+    name: stock-management-bot
+    runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python telBot.py
+    startCommand: python main.py
+    plan: free
