@@ -2,9 +2,13 @@ import logging
 import os
 from datetime import datetime
 import json
+import threading
 import gspread
+
+from flask import Flask
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
+
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -65,7 +69,7 @@ SCOPES = [
 creds_json = os.environ.get("GOOGLE_CREDS_JSON")
 
 if creds_json:
-    # Render deployment
+
     creds_dict = json.loads(creds_json)
 
     credentials = Credentials.from_service_account_info(
@@ -74,7 +78,7 @@ if creds_json:
     )
 
 else:
-    # Local development
+
     credentials = Credentials.from_service_account_file(
         "credentials/service_account.json",
         scopes=SCOPES
@@ -261,7 +265,6 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         row_index, product = find_product(product_name)
 
-        # EXISTING PRODUCT
         if product:
 
             new_quantity = int(product["Quantity"]) + quantity
@@ -277,7 +280,6 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"New Quantity: {new_quantity}"
             )
 
-        # NEW PRODUCT
         else:
 
             product_id = f"P{len(inventory_sheet.get_all_records()) + 1}"
@@ -622,11 +624,32 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# MAIN FUNCTION
+# FLASK WEB SERVER
+# =========================
+
+web_app = Flask(__name__)
+
+
+@web_app.route("/")
+def home():
+    return "✅ Telegram Stock Bot is Running"
+
+
+def run_web():
+
+    port = int(os.environ.get("PORT", 10000))
+
+    web_app.run(
+        host="0.0.0.0",
+        port=port
+    )
+
+# =========================
+# TELEGRAM BOT
 # =========================
 
 
-def main():
+def run_bot():
 
     app = Application.builder().token(TOKEN).build()
 
@@ -658,9 +681,12 @@ def main():
     app.run_polling()
 
 # =========================
-# START BOT
+# MAIN
 # =========================
 
 
 if __name__ == "__main__":
-    main()
+
+    threading.Thread(target=run_bot).start()
+
+    run_web()
