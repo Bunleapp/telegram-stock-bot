@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 import json
 import gspread
-
+import asyncio
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
@@ -654,4 +654,4 @@ if __name__ == "__main__":
 
     logger.info("✅ Bot is running...")
 
-    app.run_polling()
+    asyncio.run(app.run_polling())
