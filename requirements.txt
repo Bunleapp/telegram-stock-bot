@@ -2,5 +2,4 @@ python-telegram-bot==20.7
 gspread==6.1.2
 google-auth==2.29.0
 python-dotenv==1.0.1
-Flask==3.0.3
 gunicorn==22.0.0

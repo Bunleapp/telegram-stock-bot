@@ -2,10 +2,8 @@ import logging
 import os
 from datetime import datetime
 import json
-import threading
 import gspread
 
-from flask import Flask
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
@@ -624,32 +622,10 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# FLASK WEB SERVER
+# MAIN
 # =========================
 
-web_app = Flask(__name__)
-
-
-@web_app.route("/")
-def home():
-    return "✅ Telegram Stock Bot is Running"
-
-
-def run_web():
-
-    port = int(os.environ.get("PORT", 10000))
-
-    web_app.run(
-        host="0.0.0.0",
-        port=port
-    )
-
-# =========================
-# TELEGRAM BOT
-# =========================
-
-
-def run_bot():
+if __name__ == "__main__":
 
     app = Application.builder().token(TOKEN).build()
 
@@ -679,14 +655,3 @@ def run_bot():
     logger.info("✅ Bot is running...")
 
     app.run_polling()
-
-# =========================
-# MAIN
-# =========================
-
-
-if __name__ == "__main__":
-
-    threading.Thread(target=run_bot).start()
-
-    run_web()
