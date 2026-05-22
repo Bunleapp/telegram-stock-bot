@@ -4,6 +4,9 @@ from datetime import datetime
 import json
 import gspread
 import asyncio
+import threading
+
+from flask import Flask
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
@@ -622,10 +625,35 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # =========================
-# MAIN
+# FLASK WEB SERVER
 # =========================
 
-if __name__ == "__main__":
+web_app = Flask(__name__)
+
+
+@web_app.route("/")
+def home():
+    return "✅ Telegram Stock Bot is Running"
+
+
+def run_web():
+
+    port = int(os.environ.get("PORT", 10000))
+
+    web_app.run(
+        host="0.0.0.0",
+        port=port
+    )
+
+# =========================
+# TELEGRAM BOT
+# =========================
+
+
+def run_bot():
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     app = Application.builder().token(TOKEN).build()
 
@@ -654,4 +682,15 @@ if __name__ == "__main__":
 
     logger.info("✅ Bot is running...")
 
-    asyncio.run(app.run_polling())
+    app.run_polling()
+
+# =========================
+# MAIN
+# =========================
+
+
+if __name__ == "__main__":
+
+    threading.Thread(target=run_bot).start()
+
+    run_web()
